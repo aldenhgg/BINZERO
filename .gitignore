@@ -1,22 +1,279 @@
-### AL ###
-#Template for AL projects for Dynamics 365 Business Central
-#launch.json folder
-.vscode/
-#Cache folder
-.alcache/
-#Symbols folder
-.alpackages/
-#Snapshots folder
-.snapshots/
-#Testing Output folder
-.output/
-#Extension App-file
-*.app
-#Rapid Application Development File
-rad.json
-#Translation Base-file
-*.g.xlf
-#License-file
-*.flf
-#Test results file
-TestResults.xml
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto App Multi-Chain Portfolio</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+body{
+  margin:0;
+  background: linear-gradient(180deg,#121212,#1c1c1c);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  color:#fff;
+  font-family:'Courier New', monospace;
+}
+
+.app{
+  background:#2f2f2f;
+  width:100%;
+  height:100%;
+  max-width:414px;
+  aspect-ratio:9/16;
+  overflow:hidden;
+  color:#fff;
+}
+
+.screen{
+  display:none;
+  height:100%;
+  overflow:auto;
+  padding:12px;
+}
+.screen.active{display:block}
+
+.coin-item{cursor:pointer}
+.coin-item:hover{
+  background:#3a3a3a;
+  transform: scale(1.02);
+  transition:0.2s;
+}
+
+.badge-up{background: linear-gradient(90deg,#1e88e5,#42a5f5);}
+.badge-down{background: linear-gradient(90deg,#e53935,#ef5350);}
+
+.card-dark{
+  background:#2c2c2c;
+  border-radius:12px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.5);
+  border:none;
+  color:#fff;
+}
+
+.list-group-item,
+.list-group-item *{
+  color:#fff !important;
+}
+
+#tvChart{height:250px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.5);}
+.text-secondary{color:#ccc !important;}
+
+input, select, button{margin-top:5px;}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+<!-- SCREEN 1 -->
+<div id="screenList" class="screen active">
+
+  <!-- Wallet Input + Chain Selector + Portfolio -->
+  <div class="card card-dark p-2 mb-3">
+    <input type="text" id="walletAddress" class="form-control form-control-sm" placeholder="Masukkan wallet address">
+    <select id="chainSelect" class="form-select form-select-sm mt-2">
+      <option value="1">Ethereum</option>
+      <option value="56">BSC</option>
+      <option value="137">Polygon</option>
+      <option value="BTC">Bitcoin</option>
+    </select>
+    <button class="btn btn-sm btn-primary mt-2 w-100" onclick="loadPortfolio()">Lihat Portfolio</button>
+    <div id="portfolioResult" class="mt-2">Portfolio: $0</div>
+  </div>
+
+  <h5 class="mb-2">Market Crypto</h5>
+  <ul class="list-group mb-3" id="coinList"></ul>
+
+</div>
+
+<!-- SCREEN 2 -->
+<div id="screenDetail" class="screen">
+  <button class="btn btn-sm btn-secondary mb-2" onclick="goBack()">← Back</button>
+
+  <div class="card card-dark p-3 mb-2">
+    <h5 id="coinTitle"></h5>
+    <div id="coinPrice"></div>
+    <span id="coinChange" class="badge"></span>
+  </div>
+
+  <div class="card card-dark p-2 mb-2">
+    <div id="tvChart"></div>
+  </div>
+
+  <div class="card card-dark p-3">
+    <div>Market Cap: <span id="marketCap"></span></div>
+    <div>Supply: <span id="supply"></span></div>
+    <div>Volume: <span id="volume"></span></div>
+  </div>
+</div>
+
+</div>
+
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script>
+function formatIDR(num){
+  return "IDR " + num.toLocaleString("id-ID");
+}
+function formatUSD(num){
+  return "$" + num.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+// Fungsi untuk menyingkat angka besar menjadi $M / $B / $T
+function formatUSDShort(num){
+  if(num < 0.01 && num > 0) return "< $0.01";
+  if(num >= 1e12) return "$" + (num/1e12).toFixed(2) + "T";
+  if(num >= 1e9)  return "$" + (num/1e9).toFixed(2) + "B";
+  if(num >= 1e6)  return "$" + (num/1e6).toFixed(2) + "M";
+  return "$" + num.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+const USD_RATE = 15500;
+let coins=[];
+let activeIndex=0;
+
+/* ===== LOAD COINS ===== */
+async function loadCoins(){
+  try{
+    const res = await fetch(
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&price_change_percentage=24h`
+    );
+    coins = await res.json();
+    renderList();
+  }catch(e){ console.error(e); }
+}
+
+/* ===== RENDER MARKET LIST ===== */
+function renderList(){
+  const ul = document.getElementById("coinList");
+  ul.innerHTML = "";
+  coins.forEach((c,i)=>{
+    const ch = c.price_change_percentage_24h ?? 0;
+    const up = ch >=0;
+    const li = document.createElement("li");
+    li.className = "list-group-item bg-dark d-flex justify-content-between align-items-center coin-item";
+    li.innerHTML = `
+      <div>
+        <strong>${c.symbol.toUpperCase()}</strong><br>
+        <small>${c.name}</small>
+      </div>
+      <span class="badge ${up?'badge-up':'badge-down'}">
+        ${ch.toFixed(2)}%
+      </span>`;
+    li.onclick = ()=>openDetail(i);
+    ul.appendChild(li);
+  });
+}
+
+/* ===== NAVIGATION ===== */
+function openDetail(i){
+  activeIndex=i;
+  screenList.classList.remove("active");
+  screenDetail.classList.add("active");
+  showDetail();
+}
+function goBack(){
+  screenDetail.classList.remove("active");
+  screenList.classList.add("active");
+}
+
+/* ===== DETAIL SCREEN ===== */
+function showDetail(){
+  const c = coins[activeIndex];
+  const ch = c.price_change_percentage_24h ?? 0;
+  const up = ch >= 0;
+
+  coinTitle.innerText = `${c.name} (${c.symbol.toUpperCase()})`;
+
+  coinPrice.innerHTML = `
+    <h4>${formatIDR(c.current_price*USD_RATE)}</h4>
+    <small class="text-secondary">${formatUSD(c.current_price)}</small>
+  `;
+
+  coinChange.innerText = ch.toFixed(2) + "%";
+  coinChange.className = "badge "+(up?"badge-up":"badge-down");
+
+  // Market Cap, Supply, Volume per coin disingkat
+  marketCap.innerText = formatUSDShort(c.market_cap);
+  supply.innerText = formatUSDShort(c.circulating_supply*c.current_price);
+  volume.innerText = formatUSDShort(c.total_volume);
+
+  loadChartDynamic(c.symbol.toUpperCase());
+}
+
+/* ===== DYNAMIC CHART ===== */
+function loadChartDynamic(symbol){
+  tvChart.innerHTML = "";
+  const tvSymbol = "BINANCE:"+symbol+"USDT";
+  try{
+    new TradingView.widget({
+      autosize:true,
+      symbol: tvSymbol,
+      interval:"15",
+      theme:"dark",
+      container_id:"tvChart"
+    });
+  }catch(e){
+    tvChart.innerHTML = "<div class='text-center text-secondary'>Chart belum tersedia</div>";
+  }
+}
+
+/* ===== PORTFOLIO MULTI-CHAIN ===== */
+async function loadPortfolio(){
+  const address = document.getElementById("walletAddress").value.trim();
+  const chain = document.getElementById("chainSelect").value;
+  const resultDiv = document.getElementById("portfolioResult");
+
+  if(!address){
+    resultDiv.innerHTML="Portfolio: $0";
+    return;
+  }
+
+  resultDiv.innerHTML="Loading…";
+
+  try{
+    if(chain === "BTC"){
+      const res = await fetch(`https://blockchain.info/balance?active=${address}`);
+      const data = await res.json();
+      const satoshi = Object.values(data)[0].final_balance;
+      const btc = satoshi / 1e8;
+      const priceRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+      const priceData = await priceRes.json();
+      const total = btc * priceData.bitcoin.usd;
+      const displayTotal = total < 0.01 && total>0 ? "< $0.01" : formatUSD(total);
+      resultDiv.innerHTML=`<strong>Portfolio: ${displayTotal}</strong><br>BTC ${btc.toFixed(8)} → ${displayTotal}`;
+    } else {
+      const API_KEY="ckey_demo";
+      const res = await fetch(`https://api.covalenthq.com/v1/${chain}/address/${address}/balances_v2/?key=${API_KEY}`);
+      const data = await res.json();
+      if(!data.data || !data.data.items) { resultDiv.innerHTML="Portfolio: $0"; return; }
+
+      let total=0, html="";
+      data.data.items.forEach(token=>{
+        if(token.balance>0 && token.quote>0){
+          total += token.quote;
+          html += `<div>${token.contract_ticker_symbol} ${parseFloat(token.balance/token.contract_decimals).toFixed(4)} → ${formatUSDShort(token.quote)}</div>`;
+        }
+      });
+      const displayTotal = total < 0.01 && total>0 ? "< $0.01" : formatUSD(total);
+      resultDiv.innerHTML = `<strong>Portfolio: ${displayTotal}</strong><br>` + html;
+    }
+
+  }catch(e){
+    resultDiv.innerHTML="Portfolio: $0";
+    console.error(e);
+  }
+}
+
+/* ===== INIT ===== */
+loadCoins();
+setInterval(loadCoins,30000);
+</script>
+
+</body>
+</html>
